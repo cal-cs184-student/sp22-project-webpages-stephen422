@@ -1,7 +1,625 @@
-<html>
-	<head>
-	</head>
-	<body>
-		Project 1 here
-	</body>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<style>
+  body {
+    padding: 100px;
+    width: 1000px;
+    margin: auto;
+    text-align: left;
+    font-weight: 300;
+    font-family: 'Open Sans', sans-serif;
+    color: #121212;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Source Sans Pro', sans-serif;
+  }
+</style>
+<title>CS 184 Rasterizer</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet" />
+</head>
+
+
+<body>
+
+<h1 align="middle">CS 184: Computer Graphics and Imaging, Spring 2022</h1>
+<h1 align="middle">Project 1: Rasterizer</h1>
+<h2 align="middle">Hansung Kim, CS284A Spring 2022</h2>
+
+<br/>
+
+<div/>
+
+<h2 align="middle">Overview</h2>
+  <p>
+    This project is essentially about building a rasterizing renderer for SVG
+    images. It is designed for us to exercise the basic rasterization
+    techniques we learned in the lecture, i.e. rasterization by sampling,
+    antialiasing using supersampling, transformations, texture sampling and
+    mipmaps.
+  </p>
+  <p>
+    Aside from just knowing the concepts, this project helped me understand
+    the real-world constraints when putting the concepts into actual code:
+    such as compute costs manifesting as framerate drops,
+    how to minimize loop iterations by bounding by screen space, tradeoff
+    between compute and memory requirements, etc. It was also interesting to
+    see that there's no "magic" behind what's going on the screen to draw cool
+    graphics: it is all well-founded math and signal processing in action.
+  </p>
+
+<h2 align="middle">Section I: Rasterization</h2>
+
+<h3 align="middle">Part 1: Rasterizing single-color triangles</h3>
+
+<h4>Walkthrough</h4>
+  <p>
+    Triangles are geometric shapes that consist of vertices whose position are
+    defined as continuous real values. This is in contrast to computer screens
+    which can only display informations that are discretized by their according
+    pixel locations. Therefore, in order to convert from the continuous domain
+    to the discrete domain, we use "sampling". By viewing the triangle as a
+    function whose evaluated value is 1 if a given location inside the triangle
+    and 0 if not, we can "discretize" this function by repeatedly evaluating the
+    function with discrete values that are the pixel positions, of which process
+    is called sampling.
+  </p>
+  <p>
+    In order to actually evaluate the function, we need an algorithm that
+    determines if the given location is inside the triangle or not.  For this, we
+    use simple vector arithmetic that is given in the lecture, with the modification
+    that checks if all three L0, L1 and L2 values are also smaller than 0, to
+    accommodate the case when the edges are wound in the clockwise direction.
+  </p>
+
+<h4>Comparison with the bounding box method</h4>
+  <p>
+    The algorithm in fact just uses the simple bounding box rasterization method.
+    In <code>rasterize_triangle()</code>,
+    I calculate the bounding box using variables <code>sxmin</code>,
+    <code>symin</code>, <code>sxmax</code> and <code>sxmax</code>.  Then,
+    I run a double for-loop for (x, y) positions inside these ranges to check
+    all samples in the bounding box.
+  </p>
+  <p>
+    One optimization is that the code skips loop iterations for pixels that are
+    outside the screen space (two <code>if (...) continue</code> statements).
+    Therefore the algorithm might be slightly more efficient than actually
+    looping over every samples in the bounding box.
+  </p>
+
+<h4>Screenshot</h4>
+  <p>
+    One interesting part of the image is where there is an aliasing effect
+    around the narrow part of the magenta triangle. This is because the
+    sampling frequency is too low compared to the narrow width of the geometry,
+    therefore not meeting the Nyquist requirement.  A way to fix this is to
+    increase the sampling resolution, which is covered in Task 2 by
+    supersampling.
+  </p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/task1.png" align="middle" width="400px"/>
+        <figcaption align="middle">
+          Task 1, <code>basic/test4.svg</code>, rendered at 800x600. Aliasing
+          occurs at the narrow part of the triangle.
+          </figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h3 align="middle">Part 2: Antialiasing triangles</h3>
+
+<h4>Walkthrough</h4>
+  <p>
+  My supersampling implementation works by expanding the size of the
+  <code>sample_buffer</code> vector by the sampling rate (e.g. for 4x4
+  sampling, expand by 16 times).  <code>rasterize_triangle</code> simply
+  samples the geometry with the increased sampling rate and stores the result
+  onto <code>sample_buffer</code>.  Finally, <code>resolve_to_framebuffer</code>
+  views into <code>sample_buffer</code> and does the averaging for all pixels,
+  and writes the averaged result to the framebuffer.  Data structure-wise, 
+  </p>
+  <p>
+  In terms of data structure, the only change is expanding the size of
+  <code>sample_buffer</code>, but the expanded vector takes on a specific memory layout.
+  The memory layout of <code>sample_buffer</code> places
+  all subpixels of a pixel adjacently, and then enumerating these subpixels by
+  the row-major pixel order.  For example, for 2x2 supersampling, the memory
+  layout is:
+  <div align="middle">
+  <code>[p00_0, p00_1, p00_2, p00_3, p10_0, p10_1, p10_2, p10_3, ...]</code>
+  </div>
+  <p>
+  where <code>pxy_n</code> denotes the 3D-vector color value of the n-th
+  subpixel of a pixel that is located at (x,y) position in the screen space.
+  I choose to use this memory layout because it improves the locality of
+  the subpixels, which could lead to a more efficient memory access pattern
+  when accessing them to average down onto a framebuffer.
+  </p>
+  <p>
+  Code-wise, supersampling is implemented by nesting another double for-loop
+  inside the loop that iterates over the bounding box pixels in
+  <code>rasterize_triangle()</code>.  The local variable <code>gridsize</code> is the value of
+  <code>sqrt(sampling_rate)</code>, which can be used for indexing the
+  subpixels inside a pixel.  For each of the subpixels,
+  we compute the (x,y) coordinate of the center of each subpixel, and use this
+  coordinate for running the point-in-triangle tests.  <code>resolve_to_framebuffer()</code>
+  also has an added for loop that goes over the subpixels to accumulate their
+  color values and then normalize it to compute the average.
+  </p>
+  <p>
+  Supersampling is useful because it solves the aliasing problem caused by
+  the sampling frequency of the screen being higher than the Nyquist frequency
+  of the original geometry.  This solution, called antialiasing, works by removing signal
+  frequencies that are above the Nyquist limit of the original signal.  A simple way to achieve this
+  frequency culling is to convolve the original function with a blurring filter,
+  which in turn can be achieved by sampling multiple positions in a single pixel,
+  and then averaging them out to a single value.  This "supersampling-then-averaging"
+  process essentially has the effect of applying a low pass filter.
+  </p>
+
+<h4>Screenshot</h4>
+
+  <p>
+  In the below screenshot, we can clearly see that as the supersampling rate
+  increases, the aliasing effect occurred at the original image at the skinny
+  corner gets more and more ameliorated.  Aliasing is still there at 4 supersampling
+  per pixel. This is because the cutoff frequency of the low-pass filter effect
+  achieved at that supersampling rate was not low enough to effectively cut out all
+  frequencies that are higher than the Nyquist frequency.
+  </p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/task2_ss1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>basic/test4.svg</code>, supersampled 1 per pixel.</figcaption>
+      </td>
+      <td>
+        <img src="images/task2_ss4.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>basic/test4.svg</code>, supersampled 4 per pixel.</figcaption>
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/task2_ss9.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>basic/test4.svg</code>, supersampled 9 per pixel.</figcaption>
+      </td>
+      <td>
+        <img src="images/task2_ss16.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>basic/test4.svg</code>, supersampled 16 per pixel.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h3 align="middle">Part 3: Transforms</h3>
+
+  <p>
+  Below is my bad attempt at making the cubeman "dab".  I also modified the
+  scale values to make his biceps more buff (but not his quads cause who's been
+  skipping leg days.)  By putting multiple
+  <code>g</code> sections in the svg file under the same <code>rotate</code> tab,
+  I could compose the transforms more easily, e.g. rotate his whole arm rather
+  than just his forearm even with adding just one rotate line.
+  </p>
+
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/my_robot.png" align="middle" height="300px"/>
+        <figcaption align="middle"><code>my_robot.svg</code> render, "dabbing."</figcaption>
+      </td>
+      <td>
+        <img src="images/squidward.webp" align="middle" height="300px"/>
+        <figcaption align="middle">How it's supposed to look like (image from magneticmag.com).</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h2 align="middle">Section II: Sampling</h2>
+
+<h3 align="middle">Part 4: Barycentric coordinates</h3>
+
+<h4>Explanation</h4>
+
+  <p>
+  Barycentric coordinates is essentially a way of doing interpolation inside
+  a triangle, by assuming that there is a linear approximation between the values
+  at the three vertices (A, B, C) and the value at arbitrary positions inside
+  the triangle, i.e. <code>v = aA + bB + cC</code>.  The insight is that
+  we take the interpolation coefficients <code>a, b, c</code> to be constant regardless
+  of the kind of value we're trying to interpolate.  Therefore, we can then
+  figure out <code>a, b, c</code> using the coordinates first, and then use
+  them to interpolate any other values such as pixel colors or
+  texture coordinates (u, v).
+  </p>
+  <p>
+  As an illustration, we can look at the image at the left below.  While each
+  of the vertices have the RGB values of (1,0,0), (0,1,0) and (0,0,1), all the
+  interior pixels have continuously varying RGB values depending on their position.
+  This is because the <code>a, b, c</code> coefficients change continuously
+  by their coordinates, and therefore the colors as well, which are produced
+  using the same coefficients.
+  I saved the svg imaged used for rendering at <code>docs/barycentric.svg</code>.
+  </p>
+  <p>
+  In OpenGL terms, barycentric coordinates (when applied to vertex colors) could
+  be an example of a simple fragment shader that linear interpolates the
+  colors at the vertices.
+  </p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/barycentric.png" align="middle" height="300px"/>
+        <figcaption align="middle">Illustration of barycentric coordinates
+          (<code>docs/barycentric.svg</code>).
+        </figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h4>Implementation</h4>
+
+  <p>
+  For implementation, I made a helper function called
+  <code>barycentric_interpolation</code> in <code>rasterizer.cpp</code>.  It
+  takes the coordinate of the three triangle vertices and one arbitrary
+  interior point, and computes the alpha, beta and gamma coefficients that
+  correspond to that point.  The caller, <code>rasterize_interpolated_color_triangle</code>,
+  then can call into that function to get the interpolation coefficients,
+  and simply use them to interpolate the new color value using the three
+  vertex colors.  The render of <code>test7.svg</code> is shown below.
+  </p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/task4.png" align="middle" height="300px"/>
+        <figcaption align="middle"><code>basic/test7.svg</code>.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h3 align="middle">Part 5: "Pixel sampling" for texture mapping</h3>
+
+<h4>Explanation</h4>
+
+  <p>
+  When mapping textures to a geometry, we face the same problem as e.g.
+  coloring pixels inside the triangle: which value of the texture data do we
+  have to use to color the pixel? However for textures, this problem is more
+  compounded because the texture data that we have is also another discrete
+  data to begin with.
+  </p>
+  <p>
+  Therefore, the central idea is to "re-sample" it: first, reconstruct a
+  continuous function from the discrete texture data using e.g. linear
+  interpolation, and second, sample this reconstructed function using a coordinate on the
+  texture space (u,v) that corresponds to the coordinate on the screen space
+  (x,y).  This method is called pixel sampling for textures.
+  </p>
+
+<h4>Implementation</h4>
+
+  <p>
+  The implementation for pixel sampling is in two parts: (1) (u, v) coordinates
+  computation, and the (2) actual reconstruction/sampling of the texture data.
+  </p>
+  <p>
+  The <code>rasterize_textured_triangle()</code> takes care of the (1) part:
+  by re-using the <code>barycentric_interpolation()</code> function from task 4,
+  it computes the (u,v) coordinate of any interior point inside a triangle
+  using the (u,v) coordinates of the three vertices.
+<b>Please note</b> that despite there is a lot of code repetition, the code
+for the three <code>rasterize_xxx</code> functions are left to be freestanding
+without use of helper functions for better readability.
+  </p>
+
+  <p>
+  The part (2), reconstruction and sampling, is implemented in
+  <code>sample_nearest()</code> and <code>sample_bilinear()</code> functions
+  in <code>texture.cpp</code>.  They are two different methods of reconstructing
+  continuous texture data from the original texture.
+  </p>
+  <p>
+  For <code>sample_nearest()</code>,
+  finding the nearest texel for a given uv-coordinate is simply a matter of
+  scaling them up by the texture's (width,height) value, and flooring them
+  to find the texel indices in the texture data.
+  </p>
+  <p>
+  For <code>sample_bilinear()</code>, implementation for reconstruction is more involved.  We
+  first have to find the four nearest texels to a given uv-coordinate, but
+  since the [0,1) range is inconvenient to find actual texel positions, we first
+  scale them up by multiplying with the
+  texture's (width, height) value -- this is what the local variables <code>tx</code>
+  and <code>ty</code> are about.  Then, we apply <code>floor()</code> and
+  <code>ceil()</code> to them, being careful about the fact that the center points
+  of the texels are located at half-points between integers, e.g. <code>n.5</code>.
+  </p>
+  <p>
+  Even after we find the four nearest texel positions (<code>tx_floor</code>
+  and <code>tx_ceil</code>), we have to handle the corner case of when the
+  <code>tx</code> and <code>ty</code> values fall into one of the four boundaries
+  of the texture data so that some of the positions of the four nearest texels
+  fall out-of-bounds.  This is what the following chain of <code>if-else</code> conditions
+  do: they reset the floor and ceil values to be in valid ranges, so that
+  when we later access texels by passing those values as indices to the <code>get_texel()</code> function,
+  every indices are safely contained in range <code>[0, width)</code> and
+  <code>[0, height)</code>.
+  </p>
+  <p>
+  Finally, using the "corrected"
+  <code>tx_floor</code>, <code>tx_ceil</code>, <code>ty_floor</code> and
+  <code>ty_ceil</code> values, we access the four texels using
+  <code>get_texel()</code> and store their
+  color values in local variables <code>u00, u01, u10, u11</code>.  These
+  correspond to the values that are described in the lecture slides.  Since
+  we also set the linerp coefficients <code>s</code> and <code>t</code>
+  accordingly to the boundary conditions in the aforementioned if-else statements,
+  we can safely use them to do the bilinear interpolation of the
+  <code>u00, u01, u10, u11</code> values.
+  </p>
+
+
+<h4>Comparision between nearest and bilinear</h4>
+
+<p>
+Below is the render of <code>texmap/test5.svg</code>.  We can clearly see
+that bilinear sampling improves on the legibility of the "BE" letters compared
+to the nearest pixel sampling.  We can see that even with nearest sampling,
+when supersampling is bumped up to 16 samples, the quality is reasonably good.
+However, it does not really help with the artifacts that show irregularities
+along the boundary of the blue ring.
+</p>
+
+<h4>When will what be better?</h4>
+
+<p>
+Bilinear will likely do better than nearest with supersampling especially
+in cases where the given texture data has very low resolution.
+This is because even with supersampling, if the texture data is low in resolution,
+the selected nearest texels for each of the supersamples might still be the
+same "big" texels, no matter how the supersamples are placed close to each
+other.
+</p>
+
+<p>
+Another thing to consider is the memory requirement.  While supersampling
+(at least in my implementation) requires the sampling buffer size that is
+linearly proportional to the sampling rate, bilinear texture sampling does
+not require substantially more memory allocation, because it only needs to access with
+the four neighboring pixels to do bilinear interpolation.  There is more
+computation involved because of the increased number of interpolation
+computations, but considering the fact that memory access is in general
+much more costly that computation in modern computer hardware, and also the
+fact that modern GPU includess custom accelerator HWs for bilinear interpolation
+computation, bilinear texture sampling is a much more efficient scheme to achieve
+high texture fidelity than supersampling in general.
+</p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/task5_be_nearest_ss1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>texmap/test6.svg</code>, nearest, 1 spp.</figcaption>
+      </td>
+      <td>
+        <img src="images/task5_be_nearest_ss16.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>texmap/test6.svg</code>, nearest, 16 spp.</figcaption>
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/task5_be_bilinear_ss1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>texmap/test6.svg</code>, bilinear, 1 spp.</figcaption>
+      </td>
+      <td>
+        <img src="images/task5_be_bilinear_ss16.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>texmap/test6.svg</code>, bilinear, 16 spp.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+
+<h3 align="middle">Part 6: "Level sampling" with mipmaps for texture mapping</h3>
+
+
+<h4>Explanation</h4>
+
+<p>
+Level sampling tries to accommodate the fact that when the texture is
+minified above certain degree, a single pixel in the screen space
+can have a vast amount footprint in the texture space which could be costly
+in memory. Therefore, by providing mipmaps that are produced by applying
+low-pass filter on the high-res texture image and downsampling it, we can apply
+different texture images at different minification level so that we avoid
+having to access an excessive amount of texture memory.
+</p>
+
+<h4>Implementation</h4>
+<p>
+The actual arithmetic that computes the mipmap level is in <code>get_level()</code>.
+It follows the basic algorithm described in the spec: it first computes the
+difference vectors with varying x and y (local variables <code>diff_dx_uv</code>),
+and scales them up by the texture size so that we are dividing with the same length units.
+Then, we use the C++ functions <code>std::max</code> and <code>std::log2</code> 
+to compute L and D as covered in the lecture.
+</p>
+<p>
+Once we have the mipmap levels, we are ready to do level sampling.  For
+There are two methods of level sampling covered in class: nearest and linear
+sampling.  Counting doing no level sampling at all, we have three cases.
+All of these methods are implemented in the <code>Texture::sample()</code>
+function, where a chain of if-else statement looks at the <code>sp.lsm</code>
+value to determine the method.
+</p>
+<p>
+The <code>L_NEAREST</code> is straightforward: we just round the value 
+returned from <code>get_level()</code> to find the nearest level, and we
+pass it to one of the <code>sample_xxx</code> functions according to the
+<code>sp.psm</code> variable.
+</p>
+<p>
+For <code>L_LINEAR</code>, we have to now sample at most two levels that
+are nearest to the float value of the <code>get_level()</code> return value.
+We call the <code>sample_xxx</code> functions with the two level integers,
+and do linear interpolation between them. A boundary case is when the float
+level value is exactly an integer value; in this case, we skip doing
+the sampling twice and linerp altogether by having a separte if-else case
+that returns early.
+</p>
+
+<h4>Tradeoffs between speed, memory and antialiasing power</h4>
+
+<p>
+We already did a similar discussion on tradeoff between speed and memory
+in part 5.  To reiterate, while supersampling delivers good quality in terms
+of removing more "general" jaggies that might occur in other things than
+texture mapping, pixel sampling is more efficient in terms of memory.  This is because
+(at least in my implementation) supersampling requires the sampling buffer size that is
+linearly proportional to the sampling rate, while pixel sampling does
+not require substantially more memory allocation by only looking at a bounded
+number of neighboring pixels.
+</p>
+<p>
+Likewise, for level sampling, the computational cost does increase because of the
+higher number of linear interpolation computations involved; but supersampling
+pays great memory cost by having to enlarge the sampling buffer accordingly.
+Again, considering the fact that memory access is in general
+much more costly than computation in modern computer hardware (the "memory wall"),
+this might have implications.
+Also, the fact that all modern GPU includes custom accelerator HWs for 
+bilinear/trilinear interpolation computation makes texture sampling a
+more efficient scheme than supersampling in general.
+</p>
+<p>
+However, pixel sampling and level sampling has clear limitation in that they
+are only applicable to increasing the fidelity of the texture mapping, and
+doesn't do anything in doing antialiasing in the geometry edges (removing the
+"jaggies").  Therefore, one can say that supersampling has better "general"
+antialiasing power in the sense that it can remove jaggies in both the geometry
+data and the texture data.
+</p>
+
+<h4>Comparison</h4>
+
+<p>
+In the top level image, there is some aliasing effect on the letter "a"
+with the curve being cut off in the middle.  All the other three combinations
+show an improved antialiased image.
+</p>
+<p>
+The bottom two images really show that L_NEAREST is working.
+In those images, we can see that the letter "nd" part in "hand" is seeing
+more "smooth" antialiased effects, whereas "ha" still has some aliasing.
+This is because the "nd" part got selected a deeper mipmap level than the "ha"
+part, which indicates that different mips are indeed being used for the different
+parts of the image.
+</p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/task6_l0p0.png" align="middle" width="400px"/>
+        <figcaption align="middle">L_ZERO, P_NEAREST.</figcaption>
+      </td>
+      <td>
+        <img src="images/task6_l0p1.png" align="middle" width="400px"/>
+        <figcaption align="middle">L_ZERO, P_LINEAR.</figcaption>
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/task6_l1p0.png" align="middle" width="400px"/>
+        <figcaption align="middle">L_NEAREST, P_NEAREST.</figcaption>
+      </td>
+      <td>
+        <img src="images/task6_l1p1.png" align="middle" width="400px"/>
+        <figcaption align="middle">L_NEAREST, P_LINEAR.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>
+Here is another illustration.  This is the visualization of the different
+mipmap levels taken in each pixels by setting the R and B value of the pixel
+as the mipmap level normalized by the maximum mipmap level.  We can clearly
+see that the more "stretched", and thus more magnified part of the image
+is being selected a lower mipmap level, which matches our intuition.
+</p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/task6_vis.png" align="middle" width="400px"/>
+        <figcaption align="middle">Visualization of L_LINEAR and different mipmap levels.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h2 align="middle">Section III: Art Competition</h2>
+<p>If you are not participating in the optional art competition, don't worry about this section!</p>
+
+<h3 align="middle">Part 7: Draw something interesting!</h3>
+
+<p>Here is an example 2x2 gridlike structure using an HTML table. Each <b>tr</b> is a row and each <b>td</b> is a column in that row. You might find this useful for framing and showing your result images in an organized fashion.</p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/image1.png" align="middle" width="400px"/>
+        <figcaption align="middle">Caption goes here.</figcaption>
+      </td>
+      <td>
+        <img src="images/image2.png" align="middle" width="400px"/>
+        <figcaption align="middle">Caption goes here.</figcaption>
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/image3.png" align="middle" width="400px"/>
+        <figcaption align="middle">Caption goes here.</figcaption>
+      </td>
+      <td>
+        <img src="images/image4.png" align="middle" width="400px"/>
+        <figcaption align="middle">Caption goes here.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+</body>
 </html>
