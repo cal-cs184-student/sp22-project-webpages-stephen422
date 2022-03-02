@@ -1,7 +1,574 @@
-<html>
-	<head>
-	</head>
-	<body>
-		Project 2 here
-	</body>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+  <style>
+    body {
+      padding: 100px;
+      width: 1000px;
+      margin: auto;
+      text-align: left;
+      font-weight: 300;
+      font-family: 'Open Sans', sans-serif;
+      color: #121212;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      font-family: 'Source Sans Pro', sans-serif;
+    }
+  </style>
+  <title>CS 184 Mesh Editor</title>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+  <link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet">
+</head>
+
+
+<body>
+
+<h1 align="middle">CS 284A: Computer Graphics and Imaging, Spring 2022</h1>
+<h1 align="middle">Project 2: Mesh Editor</h1>
+<h2 align="middle">Hansung Kim, CS284A</h2>
+<h3 align="middle">Repository: <a href="https://github.com/cal-cs184-student/p2-meshedit-sp22-plum">https://github.com/cal-cs184-student/p2-meshedit-sp22-plum</a></h2>
+<h3 align="middle">Github Page: <a href="https://cal-cs184-student.github.io/sp22-project-webpages-stephen422/">https://cal-cs184-student.github.io/sp22-project-webpages-stephen422/</a></h2>
+
+<br><br>
+
+<h2 align="middle">Overview</h2>
+<p>
+  This project was about techniques to build and manage meshes, the central data
+  structure in computer graphics to represent objects realistically. We learned
+  about how to represent curves that are easily managable with control points
+  without having to enumerate all the points along the curve manually. We also
+  learned how to manipulate existing polygon meshes, specifically manifolds, to
+  convert them into a higher-resolution one that can have higher fidelity using
+  surface subdivision, i.e. without editing the meshes manually.
+</p>
+
+<h2 align="middle">Section I: Bezier Curves and Surfaces</h2>
+
+<h3 align="middle">Part 1: Bezier curves with 1D de Casteljau subdivision</h3>
+
+  <h4>
+    Briefly explain de Casteljau's algorithm and how you implemented it in order
+    to evaluate Bezier curves.
+  </h4>
+  <p>
+    de Casteljau's algorithm outlines the computational steps to evaluate Bezier
+    curves. Bezier curve is a polynomially parameterized curve that meets
+    specific boundary conditions at each points, e.g. their value and also their
+    derivative. While you can find out each of the coefficients of the
+    polynomial algebraically using the Hermite matrix form, de
+    Casteljau's algorithm provides an easier way by recursively doing linear
+    interpolation points along the lines of the control points, where the
+    final step gives an actual point that lies on the curve.
+  </p>
+  <p>
+    I implemented the algorithm by writing a single step in this recursive
+    linear interpolation process, i.e. <code>BezierCurve::evaluateStep()</code>.
+    It is a simple function that does the <code>(t, (1-t))</code>
+    linear interpolation between all adjacent <code>size()-1</code> point pairs
+    stored in the <code>points</code> parameter.
+    The skeleton code would then repeatedly call this function until it reaches
+    the final point.
+  </p>
+  <h4>
+    Take a look at the provided .bzc files and create your own Bezier curve with
+    6 control points of your choosing. Use this Bezier curve for your
+    screenshots below.
+  </h4>
+  <h4>
+    Show screenshots of each step / level of the evaluation from the original
+    control points down to the final evaluated point. Press E to step through.
+    Toggle C to show the completed Bezier curve as well.
+  </h4>
+
+  <p>
+  The curve is stored at <code>docs/curve3.bzc</code>.
+  </p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p1-step1.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p1-step2.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p1-step3.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p1-step4.png" align="middle" width="250px" />
+      </td>
+    </tr>
+    <br>
+    <tr>
+      <td>
+        <img src="images/p1-step5.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p1-step6.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p1-step7.png" align="middle" width="250px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+  <h4>
+    Show a screenshot of a slightly different Bezier curve by moving the
+    original control points around and modifying the parameter t via mouse
+    scrolling.
+  </h4>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p1-different.png" align="middle" width="400px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h3 align="middle">Part 2: Bezier surfaces with separable 1D de Casteljau subdivision</h3>
+
+  <h4>
+    Briefly explain how de Casteljau algorithm extends to Bezier surfaces and
+    how you implemented it in order to evaluate Bezier surfaces.
+  </h4>
+  <p>
+    Extension of de Casteljau algorithm to 2D surfaces is basically carrying out
+    the algorithm in one direction, and applying it hierarchically to the other
+    direction.  For n x n points, we carry out the algorithm for each row of
+    points to get n 1D curves using <code>u</code> as the parameter, and then
+    for the "column" points on the n curves that share a same <code>u</code>
+    value, repeat the algorithm using <code>v</code> as the parameter.  Change
+    <code>u</code> to get the sweeping surface of this curve and we get the
+    Bezier surface.
+  </p>
+  <p>
+    In the code, I implemented the single interpolation step in
+    <code>BezierPatch::evaluateStep()</code> which is identical to Part 1
+    except that it uses the parameter passed in for t, and wrote
+    <code>BezierPatch::evaluate1D()</code> that repeatedly calls evaluateStep()
+    until the final step by looping with exiting condtion
+    <code>vector size == 1</code>.  Finally, <code>BezierPatch::evaluate()</code>
+    simply calls <code>evaluate1D()</code> on each rows and then the column
+    with the right parameter value to get the Bezier surface.  I used
+    const references to refer to the row points (<code>const auto &rowPoints</code>)
+    to avoid copying over memory unnecessarily.
+  </p>
+
+  <h4>
+    Show a screenshot of bez/teapot.bez (not .dae) evaluated by your implementation.
+  </h4>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p2-teapot.png" align="middle" width="800px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h2 align="middle">Section II: Sampling</h2>
+
+<h3 align="middle">Part 3: Average normals for half-edge meshes</h3>
+
+  <h4>
+    Briefly explain how you implemented the area-weighted vertex normals.
+  </h4>
+  <p>
+    The key idea is that you don't need to compute the area of the face;
+    computing the normal vector by doing vector cross product of the two sides
+    of a triangle, already gives the normal vector whose magnitude is equal
+    to (twice) the area of the triangle. Thus, all I did was to
+    do this vector cross product for all neighboring faces, sum them,
+    and normalize them using <code>Vector3D::unit()</code>.
+  </p>
+  <p>
+    One detail is that I added a new method <code>Face::normalWeighted()</code>
+    in <code>halfEdgeMesh.cpp</code> to do this cross product.  The reason
+    was that I found this code to be almost identical to the existing
+    <code>Face::normal()</code>, except that it doesn't do <code>unit()</code>
+    at the end.  So I offloaded this code to the <code>Face</code> class, and
+    simply called to the method in the face traversing loop in
+    <code>Vertex::normal()</code>.
+  </p>
+
+  <h4>
+    Show screenshots of dae/teapot.dae (not .bez) comparing teapot shading with
+    and without vertex normals. Use Q to toggle default flat shading and Phong
+    shading.
+  </h4>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p3-wire-flat.png" align="middle" width="400px" />
+      </td>
+      <td>
+        <img src="images/p3-wire-phong.png" align="middle" width="400px" />
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/p3-white-flat.png" align="middle" width="400px" />
+      </td>
+      <td>
+        <img src="images/p3-white-phong.png" align="middle" width="400px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+
+<h3 align="middle">Part 4: Half-edge flip</h3>
+
+  <h4>
+    Briefly explain how you implemented the edge flip operation and describe any
+    interesting implementation / debugging tricks you have used.
+  </h4>
+  <p>
+  The idea of my implementation is to keep as many as possible the
+  <b>invariants</b> that holds regardless of edge flipping, so that we can
+  minimize the number of pointer updates and therefore possible bugs.
+  </p>
+  <p>
+  In <code>flipEdge()</code>, there is a comment saying
+  <code>// Code should still work if we comment out everything below this.</code>
+  The code above this line sets the <code>halfedge</code> pointer of all
+  relevant vertices and faces, so that they point to halfedges that stays the same
+  change even after flip.  For example, the halfedge of the B vertex
+  <code>vb</code> is set to one of the halfedges in the original edge,
+  so that even after the flip, the pointed halfedge is not invalidated.
+  After that, we can safely update the members of the new halfedges
+  (<code>h1</code> and <code>h2</code>) without worrying about the integrity
+  of the original mesh elements.
+  </p>
+
+  <h4>
+    Show screenshots of a mesh before and after some edge flips.
+    Write about your eventful debugging journey, if you have experienced one.
+  </h4>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p4-before.png" align="middle" width="400px" />
+      </td>
+      <td>
+        <img src="images/p4-after.png" align="middle" width="400px" />
+      </td>
+    </tr>
+  </table>
+</div>
+  <p>
+    (Please note that the dark triangle is from degradation of normal after
+    flipping, not a hole in the mesh.)
+  </p>
+
+  <p>
+  One source of bug that I encountered was not updating the <code>h->face()</code>
+  members of the halfedges. This resulted in holes in the rendered mesh,
+  probably because the faces were not reachable in the halfedge traversal.
+  It was a simple bug in hindsight but it made me realize it's important
+  to proof-read the specification of the problem very carefully.
+  </p>
+
+
+<h3 align="middle">Part 5: Half-edge split</h3>
+  <h4>
+    Briefly explain how you implemented the edge split operation and describe
+    any interesting implementation / debugging tricks you have used.
+  </h4>
+  <p>
+    My strategy here was simply to exhaustively list all the pointer updates,
+    regardless of whether they will actually be changed after the split, to
+    prevent mistakes.  The lines that have a comment <code>// remove?</code>
+    at the end are the ones that can likely be safely removed, because their
+    values would not change (but I ended up leaving them in anyways.)
+  </p>
+  <p>
+    In the code, <code>h1</code> ... <code>h8</code> denotes the eight halfedges
+    that will be inside the polygon after the split.  Note that <code>h1</code>
+    and <code>h2</code> are reused from before the split; this is to avoid any
+    deletion of mesh elements, so that looping over them becomes easier with
+    no pointer invalidation.  Likewise, <code>f1</code> ... <code>f4</code>
+    are the four faces after the split, and <code>eam</code> ... <code>edm</code>
+    are the four edges.
+  </p>
+  <p>
+    Another rule of thumb was to handle the updates of all the halfedges first,
+    which are trickier,
+    and only after that think about linking them to the original mesh elements,
+    i.e. vertices/edges/faces.
+  </p>
+
+  <h4>
+    Show screenshots of a mesh before and after some edge splits.
+  </h4>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p5-before.png" align="middle" width="400px" />
+      </td>
+      <td>
+        <img src="images/p5-after.png" align="middle" width="400px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+  <h4>
+    Show screenshots of a mesh before and after a combination of both edge
+    splits and edge flips.
+  </h4>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p5-combined-before.png" align="middle" width="400px" />
+      </td>
+      <td>
+        <img src="images/p5-combined-after.png" align="middle" width="400px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+  <h4>
+    Write about your eventful debugging journey, if you have experienced one.
+  </h4>
+  <p>
+    Fortunately this was less of a bumpy ride than part 4, and I think that was
+    because I learned how to avoid the kinds of bugs that can come up
+    from solving part 4.
+  </p>
+
+  <h4>
+    If you have implemented support for boundary edges, show screenshots of your
+    implementation properly handling split operations on boundary edges.
+  </h4>
+  <p>
+    I did not implement the boundary edges. :)
+  </p>
+
+
+<h3 align="middle">Part 6: Loop subdivision for mesh upsampling</h3>
+
+
+  <h4>
+    Briefly explain how you implemented the loop subdivision and describe any
+    interesting implementation / debugging tricks you have used.
+  </h4>
+  <p>
+    I directly followed the steps described in the spec/comment. The steps were
+    1. compute <code>Vertex::newPosition</code>,
+    2. compute <code>Edge::newPosition</code>
+    3. split, 4. flip, and 5. update vertex positions.
+  </p>
+  <p>
+    One detail was that to figure out which edge to flip, i.e. to figure out
+    which edges are "black" so that they should not be flipped.  The problem
+    was that I couldn't use <code>isNew</code> directly, because they are already
+    used during the split so that the loop doesn't go over edges that are
+    newly created and thus fall into infinite loop.  After this process,
+    all edges would be marked <code>isNew</code>, making it unusable to determine
+    which are the blue edges in the flipping stage.
+  </p>
+  <p>
+    My solution was to introduce a new class member variable <code>isBlue</code>
+    in the <code>Edge</code> class.  I modified the <code>splitEdge()</code>
+    method in part 5 so that it marks the newly created edges (<code>eam</code>
+    and <code>edm</code>) as <code>isBlue = true</code>, and not the b-c edge
+    that was already there before the split.  This way, I could determine
+    which are the blue edges that can possibly be flipped easily by simply
+    checking that member variable.
+  </p>
+  <p>
+    Another implementation detail was that for the new vertices that
+    are created after splits, instead of waiting to update their position at the
+    last stage, I updated them immediately right after calling
+    <code>splitEdge()</code> (around line 342).  This seemed like the easiest
+    way to associate the <code>Edge::newPosition</code> member variable with
+    the actual new vertex that is created on that edge.  In order to do
+    this later at the final stage, we'd need some way to query for every new
+    vertex which edge that vertex has been created on.
+  </p>
+  <p>
+    The code also has a cute trick of finding if a blue edge connects
+    a new vertex with an old vertex, by doing XOR on the two <code>isNew</code>
+    boolean values of the two vertices (line 358).
+  </p>
+
+  <h4>
+    Take some notes, as well as some screenshots, of your observations on how
+    meshes behave after loop subdivision. What happens to sharp corners and edges?
+    Can you reduce this effect by pre-splitting some edges?
+  </h4>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p6-cube-1.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-cube-2.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-cube-3.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-cube-4.png" align="middle" width="250px" />
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/p6-torus-1.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-torus-2.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-torus-3.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-torus-4.png" align="middle" width="250px" />
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/p6-iso-1.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-iso-2.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-iso-3.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-iso-4.png" align="middle" width="250px" />
+      </td>
+    </tr>
+    <br/>
+    <tr>
+      <td>
+        <img src="images/p6-peter-1.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-peter-2.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-peter-3.png" align="middle" width="250px" />
+      </td>
+      <td>
+        <img src="images/p6-peter-4.png" align="middle" width="250px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+  <p>
+    One thing that can be observed, especially from cube, torus and icosahedron,
+    is that the sharp edges become smoother and smoother, which is expected.
+    Another perhaps undesirable effect is that those vertices at the edge
+    moves towards inside the mesh more and more after subdivision, resulting
+    in the overall size of the mesh shrinking and shrinking.
+  </p>
+  <p>
+    The cause of this is in the way we compute
+    the new positions of the vertices. Because the positions of the old vertices
+    are computed by doing weighted averages of the neighboring vertices, the more
+    a vertex is protruded outwards compared to the neighboring vertices, the further
+    it gets "pulled" towards inside at the next subdivision.
+  </p>
+  <p>
+    The problem is that this effect might not be something wanted for meshes
+    that have intentionally sharp points, e.g. ear of a cow, fingers, etc.
+    A possible solution to this (as indicated in the question) is to deliberately
+    split more edges around the intentionally sharp parts of the mesh.  By
+    doing this, the protruding vertices will have more closely neighboring vertices
+    that are also protruding outside by similar degrees, and therefore their new position
+    will be less different to the old positions after taking the average
+    of their positions.
+  </p>
+
+  <h4>
+    Load dae/cube.dae. Perform several iterations of loop subdivision on the cube.
+    Notice that the cube becomes slightly asymmetric after repeated subdivisions.
+    Can you pre-process the cube with edge flips and splits so that the cube
+    subdivides symmetrically? Document these effects and explain why they occur.
+    Also explain how your pre-processing helps alleviate the effects.
+  </h4>
+
+  <p>
+    This is because the starting edges of the cube were asymmetric to begin
+    with.  Because the neighbor relations between the vertices, i.e. edges,
+    were asymmetric, their weighted average results were also asymmetric,
+    resulting in a skewed smooth surface.
+  </p>
+  <p>
+    Therefore the solution is to make the starting edges be in a symmetric
+    configuration.  For this, I simply split all the diagonal edges to make
+    them look like "X", as shown below.  Now that the connectivity of the edges
+    are symmetric when viewed from all 12 sides (or 8 vertices), we arrive at a smooth
+    surface that is similarly symmetric.
+  </p>
+  <p>
+    Note that even with this the surface does not ever arrive at a perfect
+    sphere. This is simply a limitation of the loop subdivision algorithm.
+  </p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p6-sym-1.png" align="middle" width="200px" />
+      </td>
+      <td>
+        <img src="images/p6-sym-2.png" align="middle" width="200px" />
+      </td>
+      <td>
+        <img src="images/p6-sym-3.png" align="middle" width="200px" />
+      </td>
+      <td>
+        <img src="images/p6-sym-4.png" align="middle" width="200px" />
+      </td>
+      <td>
+        <img src="images/p6-sym-5.png" align="middle" width="200px" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+  <h4>
+    If you have implemented any extra credit extensions, explain what you did and
+    document how they work with screenshots.
+  </h4>
+
+
+
+<h2 align="middle">Section III: Optional Extra Credit</h2>
+
+Not attempted.
+
+</body>
+
 </html>
