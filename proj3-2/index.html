@@ -1,7 +1,254 @@
-<html>
-	<head>
-	</head>
-	<body>
-		Project 3-2 here
-	</body>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<style>  
+    div.padded {  
+      padding-top: 0px;  
+      padding-right: 100px;  
+      padding-bottom: 0.25in;  
+      padding-left: 100px;  
+    }  
+  </style> 
+<title>Assignment 3  |  Hansung Kim  |  CS 284A</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link rel="stylesheet" type="text/css" href="style.css" media="screen" />
+</head>
+<body>
+<br />
+<h1 align="middle">Assignment 3-2: PathTracer</h1>
+<h2 align="middle">Hansung Kim</h2>
+<h2 align="middle">CS284A, Spring 2022</h2>
+<h3 align="middle">Repository: <a href="https://github.com/cal-cs184-student/p3-2-pathtracer-sp22-robertglass">https://github.com/cal-cs184-student/p3-2-pathtracer-sp22-robertglass</a></h3>
+<h3 align="middle">Github Page: <a href="https://cal-cs184-student.github.io/sp22-project-webpages-stephen422/">https://cal-cs184-student.github.io/sp22-project-webpages-stephen422/</a></h3>
+
+<div class="padded">
+
+<h2 align="middle">Notes</h2>
+<p>
+  I chose part 1 and part 4 for my implementation.
+  I used the staff library (<code>BUILD_CUSTOM=Off</code>), not the
+  code from my 3-1 submission.
+</p>
+
+<h2 align="middle">Overview</h2>
+<p>
+  This assignment was about finishing off the global illumination renderer
+  with more focus on materials and lenses, where we modeled BRDFs of
+  additional materials like glass, and effects of an nonzero-sized camera lens.
+</p>
+<p>
+  This part really shows the versatility and simplicity of a physically-based
+  renderer, where just by slightly adjusting the behavior of the rays, we
+  can model highly sophisticated and realistic effects with low effort.
+  We did not have to change any part of the rendering pipeline to achieve this.
+  It would take significantly larger amount of effort to implement similar
+  effects in a rasterization-based renderer, with a much more complicated
+  pipeline.
+</p>
+
+<h2 align="middle">Part 1: Mirror and Glass Materials</h2>
+<h4>
+  Show a sequence of six images of scene CBspheres.dae rendered with
+  max_ray_depth set to 0, 1, 2, 3, 4, 5, and 100. The other settings should be
+  at least 64 samples per pixel and 4 samples per light.
+</h4>
+<p>
+</p>
+
+<div align="center">
+  <table style="width=100%">
+    <tr>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m0.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m1.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m2.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m3.png" width="300px" />
+      </td>
+    </tr>
+    <tr>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m4.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m5.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBspheres-s256-l4-m100.png" width="300px" />
+      </td>
+    </tr>
+  </table>
+  <figcaption align="middle">
+    Left to right, top to bottom: <code>max_ray_depth</code> 0, 1, 2, 3, 4, 5, 100,
+    <code>-s 256 -l 4</code>
+  </figcaption>
+</div>
+
+
+<h4>
+  Point out the new multibounce effects that appear in each image.
+</h4>
+<p>
+Notable multibounce effects include:
+<li>Reflections of the surroundings on the two spheres,</li>
+<li>Refractions of the surroundings on the right sphere,</li>
+<li>Bright spot on the blue wall, which comes from the refracted
+rays from the right sphere,</li>
+<li>Bright spot on the bottom of the right sphere, where the refraction from the ceiling light
+ bounced off the floor and again at the sphere,</li>
+<li>Right sphere's reflected image shown in the left sphere, where its
+  reflection is shown at <code>m=4</code>, and
+  refraction as well at <code>m>=5</code>.</li>
+</p>
+
+<h4>
+  Explain how these bounce numbers relate to the particular effects that appear.
+</h4>
+<p>
+<li>
+  At max depth 1, the spheres look entirely black except the 1-bounce light
+  because no reflection rays from the surrounding objects can be modeled.
+</li>
+<li>
+  At max depth 2, we can see the reflection of the surroundings.  We can't
+  see the refraction on the right sphere however, because refracted rays
+  require 1 additional depth to travel through the material.
+</li>
+<li>
+  At max depth 3, we start to see the refraction as well.  However,
+  the reflection of the right sphere inside the left sphere is black, because
+  those rays require at least 4 depth:
+  <code>light --> surrounding --> right sphere --> left sphere --> eye</code>.
+</li>
+<li>
+  At max depth 4, the reflection of the right sphere is no longer black, showing
+  reflected rays on the right sphere.  The refraction on the right sphere is
+  not visible yet in the reflected image because refraction needs 1 additional
+  depth.
+</li>
+<li>
+  At max depth 4, we can also see a bright spot on the blue wall, because
+  that is from the right sphere's refracted rays (visible at <code>m=3</code>)
+  that took an additional bounce off the wall.
+</li>
+<li>
+  At max depth 5, now all the reflected/refracted rays on the right sphere
+  is visible on its reflected image inside the left sphere.
+</li>
+<li>
+  At max depth 100, render does not look significantly different from depth 5, but
+  it is slightly brighter.  This is because the paths with higher depth,
+  which have higher radiance sum over the rays along its path, are modeled.
+  Interestingly there is a brighter reflection on top of the right sphere: this is
+  likely from the bright rays that got reflected from the white ceiling.
+</li>
+</p>
+
+<h2 align="middle">Part 4: Depth of Field</h2>
+<h4>
+  In a few sentences, explain the differences between a pinhole camera model and
+  a thin-lens camera model.
+</h4>
+<p>
+The pinhole camera model does not take into account the change of direction of a
+ray when it goes through the aperture of the camera.  In reality, however small
+the aperture is, it is a transparent lens that refracts the ray that goes
+through it.  The thin-lens camera model models this refraction, leveraging
+the fact that a thin lens always have a fixed focal plane where all of the
+objects on the focal plane are focused clearly on the image plane, or the sensor
+of the camera. This means that a group of rays that originate from an unfocused
+object
+no longer intersects the same point on the image plane, which results in
+a blurry image for that object.
+</p>
+
+<h4>
+  Show a "focus stack" where you focus at 4 visibly different depths through a
+  scene.
+</h4>
+<p>
+Below are the images that have increasing value of the focal distance.  We can
+see that different parts of the Lucy statue gets focused on the image, from
+closest (torch) to furthest (corner of the Cornell box) from the camera.
+Aperture size was 0.1.
+</p>
+
+<div align="center">
+  <table style="width=100%">
+    <tr>
+      <td align="middle">
+        <img src="images/CBlucy-focal1.2.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBlucy-focal1.4.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBlucy-focal1.5.png" width="300px" />
+      </td>
+    </tr>
+    <tr>
+      <td align="middle">
+        <img src="images/CBlucy-focal1.7.png" width="300px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBlucy-focal3.1.png" width="300px" />
+      </td>
+    </tr>
+  </table>
+  <figcaption align="middle">
+    Left to right, top to bottom: <code>focalDistance</code> set to
+    1.2, 1.4, 1.5, 1.7, 3.1
+    (<code>-s 256 -l 4, -b 0.1</code>)
+  </figcaption>
+</div>
+
+
+<h4>
+  Show a sequence of 4 pictures with visibly different aperture sizes, all
+  focused at the same point in a scene.
+</h4>
+<p>
+  We can see that as the aperture size gets larger, the objects that are
+  not on the focal plane gets more blurrier: the hand, light, right wing of Lucy
+  and the corner behind gets blurrier with the larger aperture sizes.
+</p>
+<p>
+  This is expected because a smaller aperture is
+  closer to the pinhole camera model that we rendered before, where objects at any
+  distance gets focused on the image plane and therefore everything is clear.
+</p>
+
+<div align="center">
+  <table style="width=100%">
+    <tr>
+      <td align="middle">
+        <img src="images/CBlucy-aperture-0.0.png" width="480px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBlucy-aperture-0.05.png" width="480px" />
+      </td>
+    </tr>
+    <tr>
+      <td align="middle">
+        <img src="images/CBlucy-aperture-0.1.png" width="480px" />
+      </td>
+      <td align="middle">
+        <img src="images/CBlucy-aperture-0.2.png" width="480px" />
+      </td>
+    </tr>
+  </table>
+  <figcaption align="middle">
+    Left to right, top to bottom: <code>lensRadius</code> set to
+    0.0, 0.05, 0.1, 0.2
+    (<code>-s 256 -l 4</code>)
+  </figcaption>
+</div>
+
+</div>
+</body>
 </html>
